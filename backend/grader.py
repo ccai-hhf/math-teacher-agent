@@ -65,31 +65,35 @@ def _image_block_openai(b64: str, media_type: str) -> dict:
     }
 
 
-def _detect_provider() -> tuple[str, str, Optional[str]]:
-    """返回 (provider, api_key, base_url)。"""
+def _detect_provider() -> tuple[str, str, Optional[str], str]:
+    """返回 (provider, api_key, base_url, model)。"""
     if os.environ.get("DEEPSEEK_API_KEY"):
         return (
             "openai",
             os.environ["DEEPSEEK_API_KEY"],
             os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         )
     if os.environ.get("KIMI_API_KEY"):
         return (
             "openai",
             os.environ["KIMI_API_KEY"],
             os.environ.get("KIMI_BASE_URL", "https://api.moonshot.cn/v1"),
+            os.environ.get("KIMI_MODEL", "kimi-k2.6"),
         )
     if os.environ.get("OPENAI_API_KEY"):
         return (
             "openai",
             os.environ["OPENAI_API_KEY"],
             os.environ.get("OPENAI_BASE_URL"),
+            os.environ.get("OPENAI_MODEL", "gpt-4o"),
         )
     if os.environ.get("ANTHROPIC_API_KEY"):
         return (
             "anthropic",
             os.environ["ANTHROPIC_API_KEY"],
             os.environ.get("ANTHROPIC_BASE_URL"),
+            os.environ.get("GRADER_MODEL", "claude-sonnet-4-5-20250929"),
         )
     raise RuntimeError(
         "未配置任何 API Key。请在 .env 中填写 "
@@ -194,6 +198,7 @@ def _grade_with_openai(
     base_url: Optional[str],
     model: str,
     user_content: list[dict],
+    extra_body: Optional[dict] = None,
 ) -> dict:
     from openai import OpenAI
 
@@ -208,13 +213,17 @@ def _grade_with_openai(
         },
     }
 
-    response = client.chat.completions.create(
-        model=model,
-        max_tokens=MAX_TOKENS,
-        messages=_build_messages("openai", user_content),
-        tools=[openai_tool],
-        tool_choice={"type": "function", "function": {"name": "submit_grading"}},
-    )
+    kwargs = {
+        "model": model,
+        "max_tokens": MAX_TOKENS,
+        "messages": _build_messages("openai", user_content),
+        "tools": [openai_tool],
+        "tool_choice": {"type": "function", "function": {"name": "submit_grading"}},
+    }
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+
+    response = client.chat.completions.create(**kwargs)
     tool_input = _extract_tool_input_openai(response)
     if tool_input is None:
         raise RuntimeError(
@@ -230,7 +239,7 @@ async def grade_paper(
     key_text: Optional[str],
     subject: str,
 ) -> GradeReport:
-    provider, api_key, base_url = _detect_provider()
+    provider, api_key, base_url, model = _detect_provider()
 
     sheet_b64, sheet_mime, w, h = _shrink_and_encode(sheet_bytes)
 
@@ -257,13 +266,11 @@ async def grade_paper(
     if provider == "anthropic":
         tool_input = _grade_with_anthropic(api_key, base_url, user_content)
     else:
-        model = (
-            os.environ.get("DEEPSEEK_MODEL")
-            or os.environ.get("KIMI_MODEL")
-            or os.environ.get("OPENAI_MODEL")
-            or "moonshot-v1-8k-vision-preview"
-        )
-        tool_input = _grade_with_openai(api_key, base_url, model, user_content)
+        # Kimi K2.x 默认开启 thinking，与 tool_choice 冲突，需要显式关闭
+        extra_body = None
+        if base_url and "moonshot" in base_url:
+            extra_body = {"thinking": {"type": "disabled"}}
+        tool_input = _grade_with_openai(api_key, base_url, model, user_content, extra_body)
 
     tool_input = _normalize_tool_input(tool_input)
 
@@ -302,19 +309,16 @@ async def grade_paper(
                     "parameters": GRADING_TOOL["input_schema"],
                 },
             }
-            model = (
-                os.environ.get("DEEPSEEK_MODEL")
-                or os.environ.get("KIMI_MODEL")
-                or os.environ.get("OPENAI_MODEL")
-                or "moonshot-v1-8k-vision-preview"
-            )
-            response2 = client.chat.completions.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                messages=_build_messages("openai", retry_content),
-                tools=[openai_tool],
-                tool_choice={"type": "function", "function": {"name": "submit_grading"}},
-            )
+            kwargs2 = {
+                "model": model,
+                "max_tokens": MAX_TOKENS,
+                "messages": _build_messages("openai", retry_content),
+                "tools": [openai_tool],
+                "tool_choice": {"type": "function", "function": {"name": "submit_grading"}},
+            }
+            if base_url and "moonshot" in base_url:
+                kwargs2["extra_body"] = {"thinking": {"type": "disabled"}}
+            response2 = client.chat.completions.create(**kwargs2)
             tool_input2 = _extract_tool_input_openai(response2)
 
         if tool_input2 is not None:
