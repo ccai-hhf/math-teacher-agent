@@ -202,7 +202,12 @@ def _grade_with_openai(
 ) -> dict:
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        max_retries=6,      # Kimi 高峰期经常 429，多试几次
+        timeout=120.0,      # 单次请求最长 120 秒
+    )
 
     openai_tool = {
         "type": "function",
@@ -223,7 +228,16 @@ def _grade_with_openai(
     if extra_body:
         kwargs["extra_body"] = extra_body
 
-    response = client.chat.completions.create(**kwargs)
+    try:
+        response = client.chat.completions.create(**kwargs)
+    except Exception as e:
+        if "429" in str(e) or "RateLimit" in str(type(e).__name__):
+            raise RuntimeError(
+                "Kimi 服务器当前负载过高（429），已自动重试多次仍失败。"
+                "请稍后（约 1-2 分钟）再点【开始批改】，或换个时间段使用。"
+            )
+        raise
+
     tool_input = _extract_tool_input_openai(response)
     if tool_input is None:
         raise RuntimeError(
@@ -300,7 +314,12 @@ async def grade_paper(
         else:
             from openai import OpenAI
 
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=6,
+                timeout=120.0,
+            )
             openai_tool = {
                 "type": "function",
                 "function": {
