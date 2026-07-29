@@ -205,8 +205,8 @@ def _grade_with_openai(
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        max_retries=6,      # Kimi 高峰期经常 429，多试几次
-        timeout=120.0,      # 单次请求最长 120 秒
+        max_retries=2,      # 失败重试 2 次
+        timeout=300.0,      # 多题卷子生成需 2-5 分钟，单次请求最长 300 秒
     )
 
     openai_tool = {
@@ -318,8 +318,8 @@ async def grade_paper(
             client = OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                max_retries=6,
-                timeout=120.0,
+                max_retries=2,
+                timeout=300.0,
             )
             openai_tool = {
                 "type": "function",

@@ -88,7 +88,7 @@ function showToast(msg) {
 }
 
 // ============ 发起批改 ============
-const GRADE_TIMEOUT_MS = 180000; // 客户端最长等待 180 秒（Kimi 高峰期需要多次重试）
+const GRADE_TIMEOUT_MS = 420000; // 客户端最长等待 7 分钟（多题卷子生成耗时较长）
 
 startBtn.addEventListener("click", async () => {
   if (!state.sheetFile) return;
