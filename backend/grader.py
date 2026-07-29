@@ -280,9 +280,10 @@ async def grade_paper(
     if provider == "anthropic":
         tool_input = _grade_with_anthropic(api_key, base_url, user_content)
     else:
-        # Kimi K2.x 默认开启 thinking，与 tool_choice 冲突，需要显式关闭
+        # Kimi 系列模型默认开启 thinking，与 tool_choice 冲突，需要显式关闭。
+        # 兼容 Moonshot 官方和 TokenDance 等第三方网关，按模型名判断。
         extra_body = None
-        if base_url and "moonshot" in base_url:
+        if model.startswith("kimi-"):
             extra_body = {"thinking": {"type": "disabled"}}
         tool_input = _grade_with_openai(api_key, base_url, model, user_content, extra_body)
 
@@ -335,7 +336,7 @@ async def grade_paper(
                 "tools": [openai_tool],
                 "tool_choice": {"type": "function", "function": {"name": "submit_grading"}},
             }
-            if base_url and "moonshot" in base_url:
+            if model.startswith("kimi-"):
                 kwargs2["extra_body"] = {"thinking": {"type": "disabled"}}
             response2 = client.chat.completions.create(**kwargs2)
             tool_input2 = _extract_tool_input_openai(response2)
