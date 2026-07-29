@@ -67,6 +67,12 @@ def _image_block_openai(b64: str, media_type: str) -> dict:
 
 def _detect_provider() -> tuple[str, str, Optional[str]]:
     """返回 (provider, api_key, base_url)。"""
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return (
+            "openai",
+            os.environ["DEEPSEEK_API_KEY"],
+            os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        )
     if os.environ.get("KIMI_API_KEY"):
         return (
             "openai",
@@ -87,7 +93,7 @@ def _detect_provider() -> tuple[str, str, Optional[str]]:
         )
     raise RuntimeError(
         "未配置任何 API Key。请在 .env 中填写 "
-        "KIMI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 之一后重启服务。"
+        "DEEPSEEK_API_KEY / KIMI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY 之一后重启服务。"
     )
 
 
@@ -251,7 +257,12 @@ async def grade_paper(
     if provider == "anthropic":
         tool_input = _grade_with_anthropic(api_key, base_url, user_content)
     else:
-        model = os.environ.get("KIMI_MODEL") or os.environ.get("OPENAI_MODEL") or "moonshot-v1-8k-vision-preview"
+        model = (
+            os.environ.get("DEEPSEEK_MODEL")
+            or os.environ.get("KIMI_MODEL")
+            or os.environ.get("OPENAI_MODEL")
+            or "moonshot-v1-8k-vision-preview"
+        )
         tool_input = _grade_with_openai(api_key, base_url, model, user_content)
 
     tool_input = _normalize_tool_input(tool_input)
@@ -291,7 +302,12 @@ async def grade_paper(
                     "parameters": GRADING_TOOL["input_schema"],
                 },
             }
-            model = os.environ.get("KIMI_MODEL") or os.environ.get("OPENAI_MODEL") or "moonshot-v1-8k-vision-preview"
+            model = (
+                os.environ.get("DEEPSEEK_MODEL")
+                or os.environ.get("KIMI_MODEL")
+                or os.environ.get("OPENAI_MODEL")
+                or "moonshot-v1-8k-vision-preview"
+            )
             response2 = client.chat.completions.create(
                 model=model,
                 max_tokens=MAX_TOKENS,

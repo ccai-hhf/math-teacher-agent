@@ -36,6 +36,12 @@ ALLOWED_MIME = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 
 
 def _provider_info() -> dict:
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return {
+            "provider": "deepseek",
+            "base_url": os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com",
+            "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        }
     if os.environ.get("KIMI_API_KEY"):
         return {
             "provider": "kimi",

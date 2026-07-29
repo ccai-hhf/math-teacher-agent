@@ -13,12 +13,14 @@
 ```bash
 cd 数学批改agent
 cp .env.example .env         # 首次运行 run.sh 也会自动做
-# 编辑 .env，填入以下三种之一：
-#   KIMI_API_KEY     （推荐国内，默认 https://api.moonshot.cn/v1）
+# 编辑 .env，填入以下四种之一：
+#   DEEPSEEK_API_KEY （推荐，性价比高，默认 https://api.deepseek.com）
+#   KIMI_API_KEY     （默认 https://api.moonshot.cn/v1）
 #   OPENAI_API_KEY   （OpenAI 或任意兼容接口）
 #   ANTHROPIC_API_KEY（Claude 官方或代理）
 ```
 
+- DeepSeek key：<https://platform.deepseek.com>
 - Kimi key：<https://platform.moonshot.cn>
 - Anthropic key：<https://console.anthropic.com/settings/keys>
 
