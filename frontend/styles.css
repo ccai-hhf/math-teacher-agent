@@ -141,6 +141,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-radius: 8px; font-size: 13px;
 }
 
+.toast-error {
+  position: fixed;
+  top: 72px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: 520px;
+  padding: 12px 18px;
+  background: #fff0f0;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.toast-error[hidden] { display: none !important; }
+
 /* ================= Loading ================= */
 .loading {
   min-height: calc(100vh - 56px);

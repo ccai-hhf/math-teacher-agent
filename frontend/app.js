@@ -71,7 +71,25 @@ function showError(msg) {
 }
 function hideError() { uploadError.hidden = true; }
 
+function showToast(msg) {
+  let toast = document.getElementById("globalToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "globalToast";
+    toast.className = "toast-error";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.hidden = false;
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.hidden = true;
+  }, 8000);
+}
+
 // ============ 发起批改 ============
+const GRADE_TIMEOUT_MS = 90000; // 客户端最长等待 90 秒
+
 startBtn.addEventListener("click", async () => {
   if (!state.sheetFile) return;
   hideError();
@@ -86,8 +104,16 @@ startBtn.addEventListener("click", async () => {
   if (keyText) fd.append("answer_key_text", keyText);
   fd.append("subject", $("subjectSelect").value);
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GRADE_TIMEOUT_MS);
+
   try {
-    const res = await fetch("/api/grade", { method: "POST", body: fd });
+    const res = await fetch("/api/grade", {
+      method: "POST",
+      body: fd,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || `HTTP ${res.status}`);
@@ -95,10 +121,15 @@ startBtn.addEventListener("click", async () => {
     state.report = await res.json();
     renderResult();
   } catch (e) {
+    clearTimeout(timeoutId);
     $("loading").hidden = true;
     $("uploader").hidden = false;
-    showError(`批改失败：${e.message}`);
+    const msg = e.name === "AbortError"
+      ? "请求超时（90 秒未响应），请检查网络或后端服务"
+      : `批改失败：${e.message}`;
+    showError(msg);
     setStatus("失败");
+    showToast(msg);
   }
 });
 
