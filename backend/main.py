@@ -35,13 +35,37 @@ MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15 MB
 ALLOWED_MIME = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 
 
+def _provider_info() -> dict:
+    if os.environ.get("KIMI_API_KEY"):
+        return {
+            "provider": "kimi",
+            "base_url": os.environ.get("KIMI_BASE_URL") or "https://api.moonshot.cn/v1",
+            "model": os.environ.get("KIMI_MODEL", "moonshot-v1-8k-vision-preview"),
+        }
+    if os.environ.get("OPENAI_API_KEY"):
+        return {
+            "provider": "openai",
+            "base_url": os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1",
+            "model": os.environ.get("OPENAI_MODEL", "gpt-4o"),
+        }
+    return {
+        "provider": "anthropic",
+        "base_url": os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com",
+        "model": os.environ.get("GRADER_MODEL", "claude-sonnet-4-5-20250929"),
+    }
+
+
 @app.get("/api/health")
 def health() -> dict:
+    info = _provider_info()
     return {
         "ok": True,
-        "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
-        "base_url": os.environ.get("ANTHROPIC_BASE_URL") or "(default)",
-        "model": os.environ.get("GRADER_MODEL", "claude-sonnet-4-5-20250929"),
+        "has_api_key": bool(
+            os.environ.get("KIMI_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or os.environ.get("ANTHROPIC_API_KEY")
+        ),
+        **info,
     }
 
 

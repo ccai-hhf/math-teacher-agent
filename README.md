@@ -11,13 +11,16 @@
 ### 1. 配置 API Key
 
 ```bash
-cd /Users/huanghongfeng3/Desktop/创新/check
+cd 数学批改agent
 cp .env.example .env         # 首次运行 run.sh 也会自动做
-# 编辑 .env，填入你的 ANTHROPIC_API_KEY
-# 如需走公司代理/内网中转，同时填写 ANTHROPIC_BASE_URL（如 https://wechat-llm.jd.com）
+# 编辑 .env，填入以下三种之一：
+#   KIMI_API_KEY     （推荐国内，默认 https://api.moonshot.cn/v1）
+#   OPENAI_API_KEY   （OpenAI 或任意兼容接口）
+#   ANTHROPIC_API_KEY（Claude 官方或代理）
 ```
 
-拿 key：<https://console.anthropic.com/settings/keys>
+- Kimi key：<https://platform.moonshot.cn>
+- Anthropic key：<https://console.anthropic.com/settings/keys>
 
 ### 2. 一键启动
 
