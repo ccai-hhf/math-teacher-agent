@@ -97,35 +97,39 @@ startBtn.addEventListener("click", async () => {
   $("loading").hidden = false;
   setStatus("批改中…");
 
-  const fd = new FormData();
-  fd.append("answer_sheet", state.sheetFile);
-  if (state.keyImageFile) fd.append("answer_key_image", state.keyImageFile);
-  const keyText = $("keyTextInput").value.trim();
-  if (keyText) fd.append("answer_key_text", keyText);
-  fd.append("subject", $("subjectSelect").value);
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), GRADE_TIMEOUT_MS);
 
   try {
+    const fd = new FormData();
+    fd.append("answer_sheet", state.sheetFile);
+    if (state.keyImageFile) fd.append("answer_key_image", state.keyImageFile);
+    const keyText = $("keyTextInput").value.trim();
+    if (keyText) fd.append("answer_key_text", keyText);
+    fd.append("subject", $("subjectSelect").value);
+
+    console.log("[grade] 发起请求", { file: state.sheetFile.name, size: state.sheetFile.size });
     const res = await fetch("/api/grade", {
       method: "POST",
       body: fd,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+    console.log("[grade] 收到响应", res.status);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
     state.report = await res.json();
+    console.log("[grade] 解析成功", state.report?.questions?.length, "题");
     renderResult();
   } catch (e) {
     clearTimeout(timeoutId);
+    console.error("[grade] 失败", e);
     $("loading").hidden = true;
     $("uploader").hidden = false;
     const msg = e.name === "AbortError"
-      ? "请求超时（90 秒未响应），请检查网络或后端服务"
+      ? "请求超时（7 分钟未响应），请检查网络或后端服务"
       : `批改失败：${e.message}`;
     showError(msg);
     setStatus("失败");
@@ -357,12 +361,26 @@ $("restartBtn").addEventListener("click", () => {
   setStatus("就绪");
 });
 
+// 全局兜底：任何未捕获的错误/Promise  rejection 都显示出来，避免无声卡死
+window.addEventListener("error", (e) => {
+  console.error("[global-error]", e.error || e.message);
+  $("loading").hidden = true;
+  $("uploader").hidden = false;
+  showToast(`页面脚本错误：${e.message}`);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("[unhandled-rejection]", e.reason);
+  $("loading").hidden = true;
+  $("uploader").hidden = false;
+  showToast(`请求异常：${e.reason?.message || e.reason}`);
+});
+
 // 启动时检查 key 是否配置
 fetch("/api/health").then(async (r) => {
   if (!r.ok) return;
   const data = await r.json();
   if (!data.has_api_key) {
-    setStatus("⚠ 未配置 ANTHROPIC_API_KEY");
-    showError("后端未检测到 ANTHROPIC_API_KEY，请在项目根目录创建 .env 并填写后重启服务。");
+    setStatus("⚠ 未配置 API Key");
+    showError("后端未检测到 API Key，请在项目根目录 .env 中填写后重启服务。");
   }
 });
