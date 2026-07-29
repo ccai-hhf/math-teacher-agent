@@ -149,7 +149,14 @@ def _normalize_tool_input(tool_input: Any) -> dict:
             if not isinstance(q, dict):
                 continue
             if "answer_bbox" in q:
-                q["answer_bbox"] = _coerce_json(q["answer_bbox"])
+                bbox = _coerce_json(q["answer_bbox"])
+                if isinstance(bbox, dict):
+                    # 模型有时会给出超出 0~1 的坐标，钳制到合法范围
+                    for k in ("x", "y", "w", "h"):
+                        v = bbox.get(k)
+                        if isinstance(v, (int, float)):
+                            bbox[k] = min(1.0, max(0.0, float(v)))
+                q["answer_bbox"] = bbox
             if "options" in q:
                 opts = _coerce_json(q["options"])
                 if opts is None:
