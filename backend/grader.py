@@ -1,0 +1,195 @@
+"""调 Claude 视觉 API 完成批改。"""
+from __future__ import annotations
+
+import base64
+import io
+import json
+import os
+from typing import Any, Optional
+
+from anthropic import Anthropic
+from PIL import Image
+
+from prompts import GRADING_TOOL, SYSTEM_PROMPT, build_user_prompt
+from schema import GradeReport, ReportMeta
+
+# 首选 Sonnet 4.5（Claude 5 Sonnet 尚未 GA；4.5 已具备高质量视觉 + tool_use）。
+MODEL_ID = os.environ.get("GRADER_MODEL", "claude-sonnet-4-5-20250929")
+MAX_TOKENS = int(os.environ.get("GRADER_MAX_TOKENS", "16000"))
+MAX_EDGE = 2048  # 图片最长边限制，防止 token 超限
+
+
+def _shrink_and_encode(image_bytes: bytes) -> tuple[str, str, int, int]:
+    """把图片限制到最长边 MAX_EDGE，返回 (base64, media_type, w, h)。"""
+    img = Image.open(io.BytesIO(image_bytes))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    w, h = img.size
+    if max(w, h) > MAX_EDGE:
+        scale = MAX_EDGE / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=92)
+    data = buf.getvalue()
+    return (
+        base64.standard_b64encode(data).decode("ascii"),
+        "image/jpeg",
+        img.size[0],
+        img.size[1],
+    )
+
+
+def _image_block(b64: str, media_type: str) -> dict:
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": b64,
+        },
+    }
+
+
+def _extract_tool_input(response) -> Optional[dict]:
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == "submit_grading":
+            return block.input
+    return None
+
+
+def _coerce_json(value: Any) -> Any:
+    """网关有时会把嵌套结构塞成 JSON 字符串。递归解一次。"""
+    if isinstance(value, str):
+        s = value.strip()
+        if s.startswith("{") or s.startswith("["):
+            try:
+                return json.loads(s)
+            except json.JSONDecodeError:
+                return value
+    return value
+
+
+def _normalize_tool_input(tool_input: Any) -> dict:
+    """把 Claude/网关返回的 tool input 归一到 {meta:{}, questions:[...]}."""
+    data = _coerce_json(tool_input)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"submit_grading 返回不是对象：{type(data).__name__}")
+
+    # questions 有时是 str
+    if "questions" in data:
+        data["questions"] = _coerce_json(data["questions"])
+    # meta 有时是 str
+    if "meta" in data:
+        data["meta"] = _coerce_json(data["meta"])
+
+    # 每道题里的 answer_bbox / options 也可能是 str
+    if isinstance(data.get("questions"), list):
+        for q in data["questions"]:
+            if not isinstance(q, dict):
+                continue
+            if "answer_bbox" in q:
+                q["answer_bbox"] = _coerce_json(q["answer_bbox"])
+            if "options" in q:
+                opts = _coerce_json(q["options"])
+                if opts is None:
+                    opts = []
+                q["options"] = opts
+    return data
+
+
+async def grade_paper(
+    sheet_bytes: bytes,
+    key_bytes: Optional[bytes],
+    key_text: Optional[str],
+    subject: str,
+) -> GradeReport:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY 未配置。请在 .env 中填写后重启服务。")
+    base_url = os.environ.get("ANTHROPIC_BASE_URL") or None
+
+    sheet_b64, sheet_mime, w, h = _shrink_and_encode(sheet_bytes)
+
+    user_content: list[dict] = [_image_block(sheet_b64, sheet_mime)]
+
+    has_key = bool(key_bytes) or bool(key_text and key_text.strip())
+    if key_bytes:
+        k_b64, k_mime, _, _ = _shrink_and_encode(key_bytes)
+        user_content.append({"type": "text", "text": "以下是【标准答案】图："})
+        user_content.append(_image_block(k_b64, k_mime))
+    if key_text and key_text.strip():
+        user_content.append(
+            {"type": "text", "text": f"以下是【标准答案】文本：\n{key_text.strip()}"}
+        )
+
+    user_content.append({"type": "text", "text": build_user_prompt(subject, has_key)})
+
+    client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=MODEL_ID,
+        max_tokens=MAX_TOKENS,
+        system=SYSTEM_PROMPT,
+        tools=[GRADING_TOOL],
+        tool_choice={"type": "tool", "name": "submit_grading"},
+        messages=[{"role": "user", "content": user_content}],
+    )
+
+    tool_input = _extract_tool_input(response)
+    if tool_input is None:
+        raise RuntimeError(
+            "Claude 未按预期调用 submit_grading 工具。stop_reason="
+            f"{response.stop_reason}"
+        )
+
+    tool_input = _normalize_tool_input(tool_input)
+
+    # 若被 max_tokens 截断导致 questions 缺失/为空 → 再要一次"精简版"（缩短 solution）。
+    questions = tool_input.get("questions")
+    if not isinstance(questions, list) or len(questions) == 0:
+        stop = getattr(response, "stop_reason", None)
+        retry_hint = (
+            "上一次响应被截断了（stop_reason="
+            f"{stop}）。请**精简每题的 solution（≤80 字）与 comment（≤20 字）**，"
+            "然后再次调用 submit_grading，务必把 questions 数组完整给出。"
+        )
+        retry_content = list(user_content) + [{"type": "text", "text": retry_hint}]
+        response2 = client.messages.create(
+            model=MODEL_ID,
+            max_tokens=MAX_TOKENS,
+            system=SYSTEM_PROMPT,
+            tools=[GRADING_TOOL],
+            tool_choice={"type": "tool", "name": "submit_grading"},
+            messages=[{"role": "user", "content": retry_content}],
+        )
+        tool_input2 = _extract_tool_input(response2)
+        if tool_input2 is not None:
+            tool_input = _normalize_tool_input(tool_input2)
+            questions = tool_input.get("questions")
+
+    if not isinstance(questions, list) or len(questions) == 0:
+        raise RuntimeError(
+            "模型返回中未包含 questions（可能被 max_tokens 截断）。"
+            "可以试着把 .env 里加 GRADER_MAX_TOKENS=24000 后重启。"
+        )
+
+    # 后端填充图片实际尺寸（模型不填这两个）
+    meta = tool_input.get("meta") or {}
+    if not isinstance(meta, dict):
+        meta = {}
+    meta.setdefault("subject", subject)
+    meta["image_width"] = w
+    meta["image_height"] = h
+    tool_input["meta"] = meta
+
+    report = GradeReport.model_validate(tool_input)
+
+    # 自校验：若模型汇总的分数与逐题不一致，以逐题为准，覆盖 meta
+    total_full = sum(q.score_full for q in report.questions)
+    total_got = sum(q.score_got for q in report.questions)
+    wrong = sum(1 for q in report.questions if not q.is_correct)
+    report.meta.total_score_possible = total_full
+    report.meta.total_score_got = total_got
+    report.meta.wrong_count = wrong
+    if not report.meta.subject:
+        report.meta.subject = subject
+    return report

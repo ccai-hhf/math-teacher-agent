@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 批改作业</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">AI 批改作业系统</div>
+    <div class="status" id="status">就绪</div>
+  </header>
+
+  <!-- ============ 上传视图 ============ -->
+  <section id="uploader" class="uploader">
+    <div class="upload-card">
+      <h2>上传学生答卷</h2>
+      <label class="drop-zone" id="dropZone">
+        <input type="file" id="sheetInput" accept="image/*" hidden />
+        <div class="drop-inner">
+          <div class="drop-icon">＋</div>
+          <div class="drop-title">点击或拖拽图片到此</div>
+          <div class="drop-hint">支持 PNG / JPG / WEBP，单张不超过 15 MB</div>
+        </div>
+        <img id="sheetPreview" alt="" />
+      </label>
+
+      <details class="optional">
+        <summary>可选：上传标准答案</summary>
+        <div class="key-row">
+          <label class="mini-drop">
+            <input type="file" id="keyImageInput" accept="image/*" hidden />
+            <span id="keyImageLabel">选择答案图（可选）</span>
+          </label>
+          <textarea id="keyTextInput" placeholder="或直接粘贴答案文本（如：1.C 2.B 3.D ...）"></textarea>
+        </div>
+      </details>
+
+      <div class="form-row">
+        <label>学科
+          <select id="subjectSelect">
+            <option value="高中数学">高中数学</option>
+            <option value="初中数学">初中数学</option>
+            <option value="高中物理">高中物理</option>
+            <option value="高中化学">高中化学</option>
+            <option value="高中生物">高中生物</option>
+            <option value="高中英语">高中英语</option>
+            <option value="高中语文">高中语文</option>
+          </select>
+        </label>
+        <button id="startBtn" class="primary" disabled>开始批改</button>
+      </div>
+      <div id="uploadError" class="error-msg" hidden></div>
+    </div>
+  </section>
+
+  <!-- ============ 批改中 ============ -->
+  <section id="loading" class="loading" hidden>
+    <div class="spinner"></div>
+    <div class="loading-title">Claude 正在阅卷…</div>
+    <div class="loading-hint">通常需要 15~40 秒，请稍候</div>
+  </section>
+
+  <!-- ============ 结果视图 ============ -->
+  <section id="result" class="result" hidden>
+    <div class="result-left">
+      <div class="layer-toggle">
+        <label><input type="checkbox" id="tgMark" checked /> √/×</label>
+        <label><input type="checkbox" id="tgAnswer" checked /> 正确答案</label>
+        <label><input type="checkbox" id="tgComment" checked /> 点评</label>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <img id="paperImg" alt="学生答卷" />
+        <canvas id="annCanvas"></canvas>
+      </div>
+    </div>
+
+    <div class="result-right">
+      <div class="report-header">
+        <div id="paperTitle" class="paper-title"></div>
+        <div class="score-row">
+          <span class="score-big" id="scoreBig">0 / 0</span>
+          <span class="wrong-pill" id="wrongPill">错 0 题</span>
+        </div>
+        <div class="actions">
+          <button id="copyJsonBtn">复制 JSON</button>
+          <button id="restartBtn">重新批改</button>
+        </div>
+      </div>
+      <div id="questionList" class="question-list"></div>
+    </div>
+  </section>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
